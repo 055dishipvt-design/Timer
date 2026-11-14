@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Question Timer</title>
+<style>
+:root{--bg:#fbf3f4;--card:#fff;--ink:#3a2f33;--mut:#8a7a80;--pink:#e8a3b5;--sage:#8fb59a;--warn:#d9786a;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#241c1f;--card:#33282c;--ink:#f3e8eb;--mut:#b5a3aa;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px;max-width:480px;margin:0 auto}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+h1{font-size:18px;margin:4px 0 12px}
+.row{display:flex;gap:10px;align-items:center}
+.row>*{flex:1}
+label{font-size:12px;color:var(--mut);display:block;margin-bottom:4px}
+input{width:100%;font-size:18px;padding:10px;border-radius:10px;border:1px solid var(--pink);background:transparent;color:var(--ink)}
+.big{font-size:56px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.sub{text-align:center;color:var(--mut);font-size:13px}
+button{font-size:17px;font-weight:600;border:0;border-radius:14px;padding:14px;color:#fff;background:var(--pink);cursor:pointer}
+button.g{background:var(--sage)}
+button.s{background:transparent;color:var(--mut);border:1px solid var(--mut)}
+button:active{transform:scale(.97)}
+.count{font-size:44px;font-weight:700;text-align:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--bg);border-radius:12px;padding:10px;text-align:center}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--mut)}
+.bar{height:10px;background:var(--bg);border-radius:6px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:var(--sage);transition:width .3s}
+.warn{color:var(--warn)}
+#log{font-size:13px;color:var(--mut);max-height:120px;overflow:auto;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>⏱ Question Timer</h1>
+
+<div class="card">
+  <div class="row">
+    <div><label>Total time (min)</label><input id="tmin" type="number" inputmode="numeric" value="60" min="1"></div>
+    <div><label>Target questions</label><input id="tq" type="number" inputmode="numeric" value="30" min="1"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="sub">Time left</div>
+  <div class="big" id="left">60:00</div>
+  <div class="bar"><i id="pbar"></i></div>
+  <div class="row" style="margin-top:12px">
+    <button id="start">Start</button>
+    <button class="s" id="reset">Reset</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="sub">Questions done</div>
+  <div class="count"><span id="done">0</span> / <span id="target">30</span></div>
+  <div class="row" style="margin-top:10px">
+    <button class="s" id="minus">−1</button>
+    <button class="g" id="plus" style="flex:2">+1 Done</button>
+  </div>
+  <div class="sub" style="margin-top:10px">This question: <b id="lap">0:00</b></div>
+  <div id="log"></div>
+</div>
+
+<div class="card">
+  <div class="grid">
+    <div class="stat"><b id="avg">–</b><span>Avg per question</span></div>
+    <div class="stat"><b id="need">–</b><span>Allowed per remaining</span></div>
+    <div class="stat"><b id="proj">–</b><span>Projected total done</span></div>
+    <div class="stat"><b id="status">–</b><span>Pace</span></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let st={total:3600,elapsed:0,done:0,target:30,laps:[],lapStart:0,running:false};
+let last=0,timer=null;
+try{const s=localStorage.getItem('qt-state');if(s){st=Object.assign(st,JSON.parse(s));st.running=false;$('tmin').value=Math.round(st.total/60);$('tq').value=st.target}}catch(e){}
+function save(){try{localStorage.setItem('qt-state',JSON.stringify(st))}catch(e){}}
+function fmt(s){s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(r).padStart(2,'0')}
+function render(){
+  const left=st.total-st.elapsed;
+  $('left').textContent=fmt(left);
+  $('left').classList.toggle('warn',left<=0);
+  $('pbar').style.width=Math.min(100,st.elapsed/st.total*100)+'%';
+  $('done').textContent=st.done;$('target').textContent=st.target;
+  $('lap').textContent=fmt(st.elapsed-st.lapStart);
+  $('start').textContent=st.running?'Pause':(st.elapsed>0?'Resume':'Start');
+  const remQ=Math.max(0,st.target-st.done);
+  $('avg').textContent=st.done?fmt(st.elapsed/st.done):'–';
+  $('need').textContent=remQ?fmt(Math.max(0,left)/remQ):'Done ✓';
+  if(st.done&&st.elapsed>0){
+    const proj=Math.floor(st.total/(st.elapsed/st.done));
+    $('proj').textContent=proj;
+    const ok=proj>=st.target;
+    $('status').textContent=ok?'On track':'Behind';
+    $('status').classList.toggle('warn',!ok);
+  }else{$('proj').textContent='–';$('status').textContent='–'}
+  $('log').innerHTML=st.laps.slice(-8).reverse().map((t,i)=>'Q'+(st.laps.length-i)+': '+fmt(t)).join('<br>');
+}
+function tick(){
+  const now=Date.now();st.elapsed+=(now-last)/1000;last=now;
+  if(st.elapsed>=st.total&&st.total>0){st.elapsed=st.total;pause();try{navigator.vibrate&&navigator.vibrate([300,100,300])}catch(e){}}
+  render();save();
+}
+function startT(){if(st.running)return;st.running=true;last=Date.now();timer=setInterval(tick,250);render()}
+function pause(){st.running=false;clearInterval(timer);render();save()}
+$('start').onclick=()=>st.running?pause():startT();
+$('reset').onclick=()=>{if(!confirm('Reset everything?'))return;pause();st.elapsed=0;st.done=0;st.laps=[];st.lapStart=0;apply();render();save()};
+$('plus').onclick=()=>{st.done++;st.laps.push(st.elapsed-st.lapStart);st.lapStart=st.elapsed;render();save()};
+$('minus').onclick=()=>{if(st.done>0){st.done--;const t=st.laps.pop()||0;st.lapStart=Math.max(0,st.lapStart-t);render();save()}};
+function apply(){st.total=Math.max(1,(+$('tmin').value||1))*60;st.target=Math.max(1,+$('tq').value||1)}
+['tmin','tq'].forEach(id=>$(id).oninput=()=>{apply();render();save()});
+apply();render();
+</script>
+</body>
+</html>
